@@ -1,71 +1,317 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>قائمة الطعام — أوضاع متعددة + سلة + طيران</title>
+<script>
+// ----------------------
+// إعداد Supabase
+// ----------------------
+const SUPABASE_URL = "https://ztwbgqkxmdhpzqhnefty.supabase.co";
+const SUPABASE_KEY =
+"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0d2JncWt4bWRocHpxaG5lZnR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwMTQwMDEsImV4cCI6MjA3OTU5MDAwMX0.6W_V9v5VxQpPfv65Ygc51-m7G1Z8sl8fx1B8bWyA6Xg";
 
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Cairo:wght@300;400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
-</head>
-<body>
+const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-<!-- floating cart -->
-<div class="cart-float" id="openCart">🛒<span id="cartCount">0</span></div>
+// ----------------------
+// تخزين البيانات
+// ----------------------
+let categories = [];
+let products = [];
 
-<!-- overlay -->
-<div id="cartOverlay"></div>
+let currentSection = null;
+let viewIndex = 0;
+let cart = [];
 
-<!-- sidebar -->
-<div id="cartSidebar">
-  <div class="cart-title">سلة المشتريات</div>
-  <div class="cart-items" id="cartItems"></div>
+const views = [
+  { cls:'mode-grid', label:'Grid 2×2' },
+  { cls:'mode-grid3', label:'Grid 3×3' },
+  { cls:'mode-row', label:'صف كامل' },
+  { cls:'mode-slider', label:'Slider أفقي' },
+  { cls:'mode-circle', label:'Circle Cards' },
+  { cls:'mode-mag', label:'Magazine' },
+  { cls:'mode-luxury', label:'Luxury Cards' },
+  { cls:'mode-crystal', label:'Crystal Cards' }
+];
 
-  <!-- total -->
-  <div style="text-align:center; margin:15px 0; color:var(--gold); font-size:20px;">
-      المجموع: <strong id="cartTotal">0 ر.س</strong>
-  </div>
+// ----------------------
+// تحميل البيانات من Supabase
+// ----------------------
+async function loadData() {
 
-  <!-- order type -->
-  <div class="order-type-box" style="margin:15px 0; padding:12px; border:1px solid rgba(255,255,255,0.08); border-radius:10px;">
-    <div style="color:var(--gold); font-size:18px; font-weight:700; margin-bottom:8px;">نوع الطلب</div>
+  // تحميل الأقسام
+  const { data: cats, error: catErr } = await client
+    .from("categories")
+    .select("*")
+    .order("id");
 
-    <label style="display:flex; align-items:center; gap:6px; margin-bottom:6px; cursor:pointer;">
-      <input type="radio" name="orderType" value="takeaway" checked style="accent-color: var(--gold);">
-      <span>سفري</span>
-    </label>
+  if (catErr) {
+    console.error("Error loading categories:", catErr);
+    return;
+  }
 
-    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-      <input type="radio" name="orderType" value="table" style="accent-color: var(--gold);">
-      <span>على طاولة</span>
-    </label>
+  // تحميل المنتجات
+  const { data: prods, error: prodErr } = await client
+    .from("products")
+    .select("*")
+    .order("id");
 
-    <div id="tableNumberWrap" style="display:none; margin-top:10px;">
-      <input id="tableNumber" type="number" min="1"
-        placeholder="رقم الطاولة"
-        style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:#000; color:#fff;">
-    </div>
-  </div>
+  if (prodErr) {
+    console.error("Error loading products:", prodErr);
+    return;
+  }
 
-  <div class="cart-footer">
-    <button id="clearCart" style="width:100%; padding:10px; border-radius:10px; background:#444; color:#fff; border:none; font-weight:700; cursor:pointer;">إفراغ السلة</button>
-    <button id="checkout" style="width:100%; padding:10px; border-radius:10px; background:var(--gold); color:#000; border:none; font-weight:700; cursor:pointer;">إتمام الطلب</button>
-  </div>
-</div>
+  categories = cats;
+  products = prods;
 
-<header>قائمة الطعام — أوضاع متعددة</header>
+  renderSections();
+  currentSection = categories.length ? categories[0].id : null;
+  renderMeals();
+}
 
-<div class="section-slider" id="sections"></div>
+// ----------------------
+// عرض الأقسام
+// ----------------------
+function renderSections() {
+  const sec = document.getElementById("sections");
+  sec.innerHTML = "";
 
-<div class="controls">
-  <div style="flex:1"></div>
-  <div id="viewName">Grid 2×2</div>
-  <button id="toggleView">تغيير العرض</button>
-</div>
+  categories.forEach(cat => {
+    sec.innerHTML += `
+      <button class="section-btn ${!currentSection || currentSection === cat.id ? 'active':''}"
+        data-section="${cat.id}">
+        ${cat.name}
+      </button>
+    `;
+  });
 
-<div id="meals" class="meals mode-grid"></div>
+  document.querySelectorAll('.section-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelector('.section-btn.active')?.classList.remove('active');
+      btn.classList.add('active');
+      currentSection = btn.dataset.section;
+      renderMeals();
+    });
+  });
+}
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="script.js"></script>
-</body>
-</html>
+// ----------------------
+// عرض المنتجات
+// ----------------------
+function renderMeals(){
+  const mealsDiv = document.getElementById('meals');
+  mealsDiv.innerHTML = "";
+
+  // تصفية حسب القسم
+  const list = products.filter(p => p.category_id == currentSection);
+
+  list.forEach((m,i)=>{
+    const card = document.createElement('div');
+    card.className = 'meal';
+
+    // magazine style (نفس نظامك)
+    if(views[viewIndex].cls==='mode-mag' && i % 4 === 0) {
+      card.classList.add('big');
+    }
+
+    // تجهيز رابط الصورة في Supabase
+    let imgURL = "";
+    if (m.image_url) {
+      imgURL = `${SUPABASE_URL}/storage/v1/object/public/menu-images/${m.image_url}`;
+    }
+
+    card.innerHTML = `
+      <div class="img"><img src="${imgURL}"></div>
+      <div class="info">
+        <h3>${m.name}</h3>
+        <p>${m.desc || ""}</p>
+        <div class="price">${m.price} ر.س</div>
+        <button class="add-to-cart" data-name="${m.name}" data-price="${m.price}">
+          إضافة للسلة
+        </button>
+      </div>
+    `;
+    mealsDiv.appendChild(card);
+  });
+
+  applyViewClass();
+}
+
+// ----------------------
+// تطبيق العرض
+// ----------------------
+function applyViewClass(){
+  const mealsDiv = document.getElementById('meals');
+  const viewNameEl = document.getElementById('viewName');
+
+  mealsDiv.className = 'meals ' + views[viewIndex].cls;
+  viewNameEl.textContent = views[viewIndex].label;
+}
+
+// ----------------------
+// زر تبديل العرض
+// ----------------------
+document.getElementById('toggleView').addEventListener('click', ()=>{
+  viewIndex = (viewIndex + 1) % views.length;
+  renderMeals();
+});
+
+// ----------------------
+// بقية نظام السلة — يبقى كما هو حرفيًا
+// ----------------------
+/* FLY ANIMATION */
+function flyToCart(imgEl, done){
+  const cartBtn = document.getElementById('openCart');
+  const a = imgEl.getBoundingClientRect();
+  const b = cartBtn.getBoundingClientRect();
+
+  const clone = imgEl.cloneNode(true);
+  clone.className = "flying-clone";
+  clone.style.left = a.left+"px";
+  clone.style.top = a.top+"px";
+  clone.style.width = a.width+"px";
+  clone.style.height = a.height+"px";
+  document.body.appendChild(clone);
+
+  const tx = b.left + b.width/2 - (a.left + a.width/2);
+  const ty = b.top + b.height/2 - (a.top + a.height/2);
+
+  requestAnimationFrame(()=>{
+    clone.style.transform = `translate(${tx}px,${ty}px) scale(.2)`;
+    clone.style.opacity = ".5";
+  });
+
+  clone.addEventListener('transitionend', ()=>{
+    clone.remove();
+    done();
+  }, {once:true});
+}
+
+/* ADD / REMOVE / QTY */
+document.addEventListener('click', (e)=>{
+
+  /* ADD TO CART */
+  if(e.target.classList.contains('add-to-cart')){
+    const name = e.target.dataset.name;
+    const price = Number(e.target.dataset.price);
+    const card = e.target.closest('.meal');
+    const imgEl = card.querySelector('.img img');
+
+    const found = cart.find(it=>it.name===name);
+    if(found){
+      found.qty++;
+      updateCartUI();
+      return;
+    }
+
+    flyToCart(imgEl, ()=>{
+      cart.push({name, price, qty:1});
+      updateCartUI();
+    });
+  }
+
+  /* QTY BUTTONS */
+  if(e.target.classList.contains('qty-btn')){
+    const idx = Number(e.target.dataset.index);
+    const op = e.target.dataset.op;
+
+    if(op==="plus") cart[idx].qty++;
+    if(op==="minus"){
+      cart[idx].qty--;
+      if(cart[idx].qty <= 0){
+        cart.splice(idx,1);
+      }
+    }
+    updateCartUI();
+  }
+
+  if(e.target.classList.contains('remove')){
+    const idx = Number(e.target.dataset.index);
+    cart.splice(idx,1);
+    updateCartUI();
+  }
+});
+
+/* CART UI UPDATE */
+function updateCartUI(){
+  const itemsDiv = document.getElementById('cartItems');
+  const countEl = document.getElementById('cartCount');
+  const totalEl = document.getElementById('cartTotal');
+
+  itemsDiv.innerHTML='';
+  countEl.textContent = cart.length;
+
+  let total = 0;
+
+  cart.forEach((item,idx)=>{
+    total += item.price * item.qty;
+
+    const row = document.createElement('div');
+    row.className = 'cart-item';
+    row.innerHTML = `
+      <div>
+        <strong>${item.name}</strong><br>
+        <span>${item.price} ر.س × ${item.qty}</span>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <div style="display:flex; gap:6px;">
+          <button class="qty-btn" data-op="plus" data-index="${idx}">+</button>
+          <button class="qty-btn" data-op="minus" data-index="${idx}">−</button>
+        </div>
+        <div class="remove" data-index="${idx}" style="color:var(--gold); cursor:pointer;">حذف</div>
+      </div>
+    `;
+    itemsDiv.appendChild(row);
+  });
+
+  totalEl.textContent = total.toFixed(2)+" ر.س";
+}
+
+/* CART open/close */
+document.getElementById('openCart').addEventListener('click', ()=>{
+  document.getElementById('cartSidebar').classList.add('open');
+  document.getElementById('cartOverlay').classList.add('show');
+});
+document.getElementById('cartOverlay').addEventListener('click', ()=>{
+  document.getElementById('cartSidebar').classList.remove('open');
+  document.getElementById('cartOverlay').classList.remove('show');
+});
+
+/* CLEAR CART */
+document.getElementById('clearCart').addEventListener('click', ()=>{
+  cart=[];
+  updateCartUI();
+});
+
+/* TABLE order option */
+document.getElementById('checkout').addEventListener('click', ()=>{
+  if(cart.length===0) return alert("السلة فارغة!");
+
+  const orderType = document.querySelector('input[name="orderType"]:checked').value;
+
+  if(orderType === "table"){
+    const tableNum = document.getElementById('tableNumber').value.trim();
+    if(tableNum === ""){
+      alert("الرجاء إدخال رقم الطاولة");
+      return;
+    }
+    alert("تم إتمام طلب طاولة رقم " + tableNum + " بنجاح 🎉");
+  } else {
+    alert("تم إتمام طلب سفري بنجاح 🎉");
+  }
+
+  cart=[];
+  updateCartUI();
+});
+
+/* SHOW/HIDE table number */
+document.querySelectorAll('input[name="orderType"]').forEach(r=>{
+  r.addEventListener('change', ()=>{
+    const isTable = document.querySelector('input[name="orderType"]:checked').value === "table";
+    document.getElementById('tableNumberWrap').style.display = isTable ? "block" : "none";
+  });
+});
+
+// ----------------------
+// بدء التحميل
+// ----------------------
+loadData();
+updateCartUI();
+
+</script>
