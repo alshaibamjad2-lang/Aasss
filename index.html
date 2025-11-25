@@ -1,154 +1,100 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>قائمة الطعام — Supabase</title>
-
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Cairo:wght@300;400;600&display=swap" rel="stylesheet">
-
-<!-- أسلوب بسيط فقط لعرض المنتجات (أقل من كودك الأصلي فقط لتختبر supabase) -->
-<style>
-body {
-  background: #000;
-  color: #fff;
-  font-family: "Cairo", sans-serif;
-  margin: 0;
-  padding: 20px;
-}
-.section-btn {
-  padding: 10px;
-  margin: 5px;
-  background: #333;
-  color: gold;
-  border-radius: 8px;
-  border: 1px solid gold;
-  cursor: pointer;
-}
-.section-btn.active { background: gold; color: #000; }
-.meal {
-  background: #111;
-  padding: 10px;
-  border-radius: 10px;
-  border:1px solid #333;
-  margin-bottom: 15px;
-}
-.meal img {
-  width: 100%;
-  border-radius: 8px;
-  height: 180px;
-  object-fit: cover;
-}
-.price { color: gold; font-size: 18px; margin-top: 8px; }
-</style>
-</head>
-<body>
-
-<h2 style="color:gold; text-align:center;">قائمة الطعام — Supabase</h2>
-
-<!-- الأقسام -->
-<div id="sections"></div>
-
-<!-- المنتجات -->
-<div id="meals"></div>
-
-<!-- تحميل مكتبة Supabase -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script>
-// --------------------------------
-// إعداد Supabase — مهم جداً
-// --------------------------------
+// ---------- إعداد Supabase ----------
 const SUPABASE_URL = "https://ztwbgqkxmdhpzqhnefty.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0d2JncWt4bWRocHpxaG5lZnR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwMTQwMDEsImV4cCI6MjA3OTU5MDAwMX0.6W_V9v5VxQpPfv65Ygc51-m7G1Z8sl8fx1B8bWyA6Xg";
 
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// متغيرات عامة
-let allCategories = [];
-let allProducts  = [];
-
-// --------------------------------
-// تحميل الأقسام + المنتجات
-// --------------------------------
+// --- تحميل الأقسام + المنتجات ---
 async function loadMenu() {
-  console.log("📡 تحميل البيانات من Supabase...");
 
-  // جلب الأقسام
-  const { data: categories, error: cErr } = await db
-    .from("categories")
-    .select("*")
-    .order("id", { ascending: true });
+    const { data: categories, error: catError } = await supabaseClient
+        .from("categories")
+        .select("*")
+        .order("id");
 
-  if (cErr) return console.error("❌ خطأ الأقسام:", cErr);
+    if (catError) {
+        console.error("خطأ جلب الأقسام:", catError);
+        return;
+    }
 
-  allCategories = categories;
+    const { data: products, error: prodError } = await supabaseClient
+        .from("products")
+        .select("*")
+        .order("id");
 
-  // جلب المنتجات
-  const { data: products, error: pErr } = await db
-    .from("products")
-    .select("*")
-    .order("id", { ascending: true });
+    if (prodError) {
+        console.error("خطأ جلب المنتجات:", prodError);
+        return;
+    }
 
-  if (pErr) return console.error("❌ خطأ المنتجات:", pErr);
-
-  allProducts = products;
-
-  renderCategories();
-  renderMeals("all");
+    renderSections(categories);
+    renderProducts(categories, products);
 }
 
-// --------------------------------
-// عرض الأقسام
-// --------------------------------
-function renderCategories() {
-  const box = document.getElementById("sections");
-  box.innerHTML = "";
+// --- الأقسام ---
+function renderSections(categories) {
+    const secDiv = document.getElementById("sections");
+    secDiv.innerHTML = "";
 
-  box.innerHTML += `<button class="section-btn active" data-id="all">الكل</button>`;
-
-  allCategories.forEach(cat => {
-    box.innerHTML += `
-      <button class="section-btn" data-id="${cat.id}">${cat.name}</button>
+    secDiv.innerHTML += `
+        <button class="section-btn active" data-section="all">الكل</button>
     `;
-  });
 
-  document.querySelectorAll(".section-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelector(".section-btn.active")?.classList.remove("active");
-      btn.classList.add("active");
-      renderMeals(btn.dataset.id);
+    categories.forEach(cat => {
+        secDiv.innerHTML += `
+            <button class="section-btn" data-section="${cat.id}">${cat.name}</button>
+        `;
     });
-  });
+
+    document.querySelectorAll(".section-btn").forEach(btn => {
+        btn.onclick = () => {
+            document.querySelector(".section-btn.active")?.classList.remove("active");
+            btn.classList.add("active");
+            renderSelected(btn.dataset.section);
+        };
+    });
 }
 
-// --------------------------------
-// عرض المنتجات
-// --------------------------------
-function renderMeals(sectionId) {
-  const box = document.getElementById("meals");
-  box.innerHTML = "";
+let globalProducts = [];
+let globalCategories = [];
 
-  const list =
-    sectionId === "all"
-      ? allProducts
-      : allProducts.filter(p => p.category_id == sectionId);
-
-  list.forEach(p => {
-    box.innerHTML += `
-      <div class="meal">
-        <img src="${p.image_url || ""}">
-        <h3>${p.name}</h3>
-        <div class="price">${p.price} ر.س</div>
-        <p>${p.description || ""}</p>
-      </div>
-    `;
-  });
+function renderProducts(categories, products) {
+    globalProducts = products;
+    globalCategories = categories;
+    renderSelected("all");
 }
 
-// تحميل عند الدخول
-loadMenu();
+// --- عرض المنتجات ---
+function renderSelected(section) {
+    const mealsDiv = document.getElementById("meals");
+    mealsDiv.innerHTML = "";
+
+    let shown = section === "all"
+        ? globalProducts
+        : globalProducts.filter(p => p.category_id == section);
+
+    shown.forEach(p => {
+        mealsDiv.innerHTML += `
+            <div class="meal">
+                <div class="img">
+                    <img src="${p.image_url || ""}">
+                </div>
+                <div class="info">
+                    <h3>${p.name}</h3>
+                    <p>${p.description || ""}</p>
+                    <div class="price">${p.price} ر.س</div>
+                    <button class="add-to-cart" data-name="${p.name}" data-price="${p.price}">
+                        إضافة للسلة
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+}
+
+// --- تحميل القائمة بعد فتح الصفحة ---
+document.addEventListener("DOMContentLoaded", loadMenu);
 </script>
-
-</body>
-</html>
